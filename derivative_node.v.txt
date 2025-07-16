@@ -1,0 +1,37 @@
+`timescale 1ns / 1ps
+module derivative_node (
+    input  wire clk,
+    input  wire rst_n,
+    input  wire signed [15:0] data_in,           // IMU 입력
+    output reg  event_spike_out,                   // 출력: 독립노드에 전달하는 스파이크
+    output reg  signed [15:0] weight_update_val,      // 출력: 조절값
+    output reg  weight_update_en                       // 출력: 조절 flag
+);
+
+    reg signed [15:0] prev_value;
+    reg signed [15:0] diff;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            prev_value <= 0;
+            diff <= 0;
+            event_spike_out <= 0;
+            weight_update_val <= 0;
+            weight_update_en <= 0;
+        end else begin
+            diff <= data_in - prev_value;
+            prev_value <= data_in;
+
+            if (diff > 16'sd1000 || diff < -16'sd1000) begin  // 예: 변화량이 임계값 초과하면 스파이크
+                event_spike_out <= 1;
+                weight_update_val <= diff >>> 3;  // 예시: 변화량을 기반으로 가중치 조절
+                weight_update_en <= 1;
+            end else begin
+                event_spike_out <= 0;
+                weight_update_val <= 0;
+                weight_update_en <= 0;
+            end
+        end
+    end
+
+endmodule

@@ -1,0 +1,55 @@
+// --- 개선된 LIF 뉴런 모듈 ---
+module lif_neuron #(
+    // 4. 파라미터화: 외부에서 값을 변경하기 용이하도록 개선
+    parameter signed [15:0] THRESHOLD       = 16'sd20000, // 스파이크 발생 임계값
+    parameter               LEAK            = 2,          // 누수량 (Right Shift 값)
+    parameter signed [15:0] INITIAL_WEIGHT  = 16'sd1024,  // 초기 가중치 (Q10 포맷 예시)
+    parameter               Q_SHIFT         = 6           // 2. Q 포맷 정규화를 위한 Right Shift 값
+)(
+    input  wire clk,
+    input  wire rst_n,
+    input  wire signed [15:0] data_in,
+    input  wire signed [15:0] weight_update_val,
+    input  wire              weight_update_en,
+    output reg  signed [15:0] spike_data_out,
+    output reg               spiked
+);
+
+    // --- 내부 변수 ---
+    reg signed [15:0] membrane_potential;
+    reg signed [15:0] weight;
+
+    // --- 가중치 업데이트 로직 ---
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            weight <= INITIAL_WEIGHT; // 파라미터로 초기 가중치 설정
+        end else if (weight_update_en) begin
+            weight <= weight + weight_update_val;
+        end
+    end
+
+    // --- 막 전위 계산 및 스파이크 발생 로직 ---
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            membrane_potential <= 16'sd0;
+            spike_data_out     <= 16'sd0;
+            spiked             <= 1'b0;
+        end else begin
+            // 3. 출력 값 안전하게 초기화
+            spike_data_out <= 16'sd0;
+            spiked         <= 1'b0;
+
+            // 1. 막 전위 갱신 로직을 한 문장으로 통합
+            // 2. Q포맷 정규화를 위해 곱셈 결과를 쉬프트
+            membrane_potential <= (membrane_potential - (membrane_potential >>> LEAK)) + ((data_in * weight) >>> Q_SHIFT);
+
+            // Fire (발화): 막 전위가 임계값을 넘으면 스파이크 발생
+            if (membrane_potential > THRESHOLD) begin
+                spiked             <= 1'b1;
+                spike_data_out     <= membrane_potential; // 스파이크 시 데이터 출력
+                membrane_potential <= 16'sd0;             // 막 전위 리셋
+            end
+        end
+    end
+
+endmodule
